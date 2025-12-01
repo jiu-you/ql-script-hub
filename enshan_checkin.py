@@ -41,6 +41,13 @@ HEADERS = {
     'Cache-Control': 'max-age=0'
 }
 
+ALREADY_SIGNED_KEYWORDS = (
+    "已签到",
+    "已经签到",
+    "今日已签",
+    "今日已签到"
+)
+
 def mask_username(username):
     """用户名脱敏处理"""
     if not username:
@@ -305,24 +312,35 @@ class EnShanSigner:
             response = self.session.post(url, headers=headers, data=data, timeout=15)
             print(f"🔍 签到响应状态码: {response.status_code}")
 
-            if response.status_code == 200:
-                # 解析JSON响应
-                try:
-                    result = response.json()
-                    if isinstance(result, dict):
-                        if result.get('success') or '成功' in str(result.get('message', '')):
-                            return True, result.get('message', '签到成功')
-                        elif result.get('message'):
-                            message = result['message']
-                            # 检查是否已签到
-                            if '已签到' in message or '已经签到' in message:
-                                return True, message
-                            else:
-                                return False, f"签到失败: {message}"
-                except ValueError:
-                    return False, "响应格式错误，无法解析JSON"
-            else:
+            if response.status_code != 200:
                 return False, f"签到请求失败，状态码: {response.status_code}"
+
+            try:
+                result = response.json()
+            except ValueError:
+                return False, "响应格式错误，无法解析JSON"
+
+            if not isinstance(result, dict):
+                return False, "响应格式异常，未获取到有效数据"
+
+            success_flag = result.get('success')
+            message = str(result.get('message', '')).strip()
+
+            if success_flag is True:
+                return True, message or "签到成功"
+
+            if success_flag is False:
+                if any(keyword in message for keyword in ALREADY_SIGNED_KEYWORDS):
+                    return True, message or "今日已签到"
+                fail_msg = message or "签到失败"
+                return False, f"签到失败: {fail_msg}"
+
+            if message:
+                if any(keyword in message for keyword in ALREADY_SIGNED_KEYWORDS):
+                    return True, message
+                return False, f"签到失败: {message}"
+
+            return False, "签到结果未知，未获取到success状态"
 
         except Exception as e:
             return False, f"签到异常: {str(e)}"
